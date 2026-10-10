@@ -80,9 +80,23 @@ export class Migration20261009192000 extends Migration {
     `);
 
     this.addSql(`create index "wallet_ledger_entries_wallet_created_index" on "wallet_ledger_entries" ("wallet_id", "created_at");`);
+
+    this.addSql(`
+      create table "inbox_messages" (
+        "id" uuid not null,
+        "message_id" varchar(120) not null,
+        "consumer_name" varchar(80) not null,
+        "payload_hash" char(64) not null,
+        "received_at" timestamptz not null,
+        "processed_at" timestamptz null,
+        constraint "inbox_messages_pkey" primary key ("id"),
+        constraint "inbox_messages_consumer_message_unique" unique ("consumer_name", "message_id")
+      );
+    `);
   }
 
   override async down(): Promise<void> {
+    this.addSql(`drop table if exists "inbox_messages";`);
     this.addSql(`drop table if exists "wallet_ledger_entries";`);
     this.addSql(`drop table if exists "wager_transactions";`);
     this.addSql(`drop table if exists "wallets";`);

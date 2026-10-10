@@ -18,6 +18,8 @@ services:
     environment:
       SERVICES: sqs
       AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh
     ports:
       - "4566:4566"
     healthcheck:

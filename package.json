@@ -8,7 +8,8 @@
     "start:dev": "bun --watch src/main.ts",
     "test": "bun test",
     "migration:up": "bun src/infrastructure/database/run-migrations.ts up",
-    "migration:down": "bun src/infrastructure/database/run-migrations.ts down"
+    "migration:down": "bun src/infrastructure/database/run-migrations.ts down",
+    "worker:sqs": "bun src/worker/sqs-wager-consumer.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.670.0",
