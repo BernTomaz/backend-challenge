@@ -1,7 +1,7 @@
 import { EntityManager } from "@mikro-orm/postgresql";
 import { LedgerDirection } from "../../domain/ledger-direction";
 import { Money, MoneyProps } from "../../domain/money";
-import { reconciliationMetrics } from "../metrics/reconciliation-metrics";
+import { logWarn, metrics } from "../observability/observability";
 import { WalletLedgerEntryRecord } from "./entities/wallet-ledger-entry.record";
 import { WalletRecord } from "./entities/wallet.record";
 
@@ -35,12 +35,9 @@ export async function reconcileWallet(
   const consistent = difference.isZero();
 
   if (!consistent) {
-    reconciliationMetrics.divergenceCount += 1;
-    console.warn("wallet_reconciliation_divergence", {
+    metrics.reconciliationDivergences += 1;
+    logWarn("wallet_reconciliation_divergence", {
       walletId: wallet.id,
-      storedBalance: stored.toJSON(),
-      calculatedBalance: calculated.toJSON(),
-      difference: difference.toJSON(),
       checkedEntries: entries.length,
     });
   }

@@ -14,6 +14,7 @@ import {
   processWagerTransactionMessage,
   WagerTransactionRequestedMessage,
 } from "./process-wager-transaction-message";
+import { logInfo, logWarn, metrics } from "../observability/observability";
 
 export interface SqsWagerTransactionConsumerOptions {
   queueUrl: string;
@@ -64,20 +65,37 @@ export class SqsWagerTransactionConsumer {
       const body = parseBody(message);
       await processWagerTransactionMessage(this.em, body);
       await this.deleteMessage(message);
+      logInfo("sqs_message_processed", {
+        correlationId: body.data.idempotencyKey,
+        messageId: body.messageId,
+        walletId: body.data.walletId,
+        providerId: body.data.providerId,
+      });
       return "processed";
     } catch (error) {
       if (isBusinessOrPermanentError(error)) {
         await this.deleteMessage(message);
+        logWarn("sqs_message_permanent_error", {
+          messageId: message.MessageId,
+        });
         return "business_error";
       }
 
       if (receiveCount(message) >= (this.options.maxAttempts ?? 5)) {
         await this.moveToDlq(message);
         await this.deleteMessage(message);
+        metrics.dlqMessages += 1;
+        logWarn("sqs_message_moved_to_dlq", {
+          messageId: message.MessageId,
+        });
         return "dlq";
       }
 
       await this.deferRetry(message);
+      metrics.retries += 1;
+      logWarn("sqs_message_retry_scheduled", {
+        messageId: message.MessageId,
+      });
       return "retry";
     }
   }

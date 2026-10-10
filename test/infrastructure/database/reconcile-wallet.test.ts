@@ -3,7 +3,7 @@ import { LedgerDirection } from "../../../src/domain/ledger-direction";
 import { reconcileWallet } from "../../../src/infrastructure/database/reconcile-wallet";
 import { WalletLedgerEntryRecord } from "../../../src/infrastructure/database/entities/wallet-ledger-entry.record";
 import { WalletRecord } from "../../../src/infrastructure/database/entities/wallet.record";
-import { reconciliationMetrics } from "../../../src/infrastructure/metrics/reconciliation-metrics";
+import { metrics } from "../../../src/infrastructure/observability/observability";
 
 describe("reconcileWallet", () => {
   test("compares stored balance with ledger balance", async () => {
@@ -44,7 +44,7 @@ describe("reconcileWallet", () => {
 
   test("logs divergence without changing the response", async () => {
     const warn = spyOn(console, "warn").mockImplementation(() => undefined);
-    reconciliationMetrics.divergenceCount = 0;
+    metrics.reconciliationDivergences = 0;
     const wallet = Object.assign(new WalletRecord(), {
       id: "wallet-1",
       currency: "BRL",
@@ -67,11 +67,14 @@ describe("reconcileWallet", () => {
 
     expect(result.consistent).toBe(false);
     expect(result.difference).toEqual({ amount: "-25.00", currency: "BRL" });
-    expect(warn).toHaveBeenCalledWith(
-      "wallet_reconciliation_divergence",
-      expect.objectContaining({ walletId: "wallet-1" }),
-    );
-    expect(reconciliationMetrics.divergenceCount).toBe(1);
+    const logged = JSON.parse(String(warn.mock.calls[0]?.[0]));
+    expect(logged).toMatchObject({
+      level: "warn",
+      message: "wallet_reconciliation_divergence",
+      walletId: "wallet-1",
+    });
+    expect(logged.storedBalance).toBeUndefined();
+    expect(metrics.reconciliationDivergences).toBe(1);
     warn.mockRestore();
   });
 });

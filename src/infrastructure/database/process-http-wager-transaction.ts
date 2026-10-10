@@ -6,6 +6,11 @@ import {
   WagerTransactionKind,
 } from "../../domain/wager-transaction";
 import { WagerTransactionRecord } from "./entities/wager-transaction.record";
+import {
+  incrementTransactionStatus,
+  logInfo,
+  metrics,
+} from "../observability/observability";
 import { processPersistedWagerTransaction } from "./process-persisted-wager-transaction";
 
 export interface ProcessHttpWagerTransactionInput {
@@ -35,6 +40,7 @@ export async function processHttpWagerTransaction(
   em: EntityManager,
   input: ProcessHttpWagerTransactionInput,
 ): Promise<ProcessHttpWagerTransactionResult> {
+  const startedAt = Date.now();
   const existing = await em.findOne(WagerTransactionRecord, {
     idempotencyKey: input.idempotencyKey,
   });
@@ -43,6 +49,14 @@ export async function processHttpWagerTransaction(
     if (existing.payloadHash !== input.payloadHash) {
       throw new IdempotencyConflictError("Idempotency key already used with different payload");
     }
+
+    metrics.duplicatesDetected += 1;
+    logInfo("wager_transaction_duplicate_replay", {
+      correlationId: input.idempotencyKey,
+      transactionId: existing.id,
+      walletId: existing.walletId,
+      providerId: existing.providerId,
+    });
 
     return {
       transactionId: existing.id,
@@ -76,6 +90,15 @@ export async function processHttpWagerTransaction(
     transaction,
     ledgerEntryId: randomUUID(),
     correlationId: input.idempotencyKey,
+  });
+  incrementTransactionStatus(result.transaction.status);
+  metrics.processingLatencyMs = Date.now() - startedAt;
+  logInfo("wager_transaction_processed", {
+    correlationId: input.idempotencyKey,
+    transactionId: result.transaction.id,
+    walletId: result.transaction.walletId,
+    providerId: result.transaction.providerId,
+    status: result.transaction.status,
   });
 
   return {

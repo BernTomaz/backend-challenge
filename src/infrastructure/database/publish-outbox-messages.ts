@@ -1,4 +1,5 @@
 import { EntityManager } from "@mikro-orm/postgresql";
+import { logInfo, metrics } from "../observability/observability";
 import { OutboxMessageRecord } from "./entities/outbox-message.record";
 
 export interface OutboxPublisher {
@@ -44,13 +45,27 @@ export async function publishDueOutboxMessages(
       try {
         await input.publisher.publish(message.payload);
         message.publishedAt = now;
+        metrics.outboxLagMs = now.getTime() - message.occurredAt.getTime();
+        logInfo("outbox_message_published", {
+          correlationId: String(message.payload.correlationId ?? ""),
+          transactionId: transactionIdFrom(message.payload),
+          walletId: message.aggregateId,
+          eventType: message.eventType,
+        });
         published += 1;
       } catch {
         message.attempts += 1;
+        metrics.retries += 1;
         message.nextAttemptAt = new Date(now.getTime() + Math.min(2 ** message.attempts, 300) * 1000);
       }
     }
 
     return published;
   });
+}
+
+function transactionIdFrom(payload: Record<string, unknown>): string | undefined {
+  const data = payload.data as { transactionId?: string } | undefined;
+
+  return data?.transactionId;
 }
