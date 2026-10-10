@@ -93,9 +93,26 @@ export class Migration20261009192000 extends Migration {
         constraint "inbox_messages_consumer_message_unique" unique ("consumer_name", "message_id")
       );
     `);
+
+    this.addSql(`
+      create table "outbox_messages" (
+        "id" uuid not null,
+        "aggregate_id" uuid not null,
+        "event_type" varchar(120) not null,
+        "payload" jsonb not null,
+        "occurred_at" timestamptz not null,
+        "attempts" integer not null,
+        "next_attempt_at" timestamptz null,
+        "published_at" timestamptz null,
+        constraint "outbox_messages_pkey" primary key ("id")
+      );
+    `);
+
+    this.addSql(`create index "outbox_messages_pending_index" on "outbox_messages" ("published_at", "next_attempt_at");`);
   }
 
   override async down(): Promise<void> {
+    this.addSql(`drop table if exists "outbox_messages";`);
     this.addSql(`drop table if exists "inbox_messages";`);
     this.addSql(`drop table if exists "wallet_ledger_entries";`);
     this.addSql(`drop table if exists "wager_transactions";`);

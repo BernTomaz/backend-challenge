@@ -2,21 +2,22 @@ import { describe, expect, test } from "bun:test";
 import { IntegrationEvent } from "../../src/domain/integration-event";
 import { OutboxMessage } from "../../src/domain/outbox-message";
 
-const event: IntegrationEvent<{ transactionId: string }> = {
-  eventId: "event-1",
-  aggregateId: "wallet-1",
-  eventType: "WagerTransactionProcessed",
-  occurredAt: new Date("2026-01-01T00:00:00.000Z"),
-  toJSON() {
-    return {
-      eventId: this.eventId,
-      eventType: this.eventType,
-      aggregateId: this.aggregateId,
-      occurredAt: this.occurredAt.toISOString(),
+class TestEvent extends IntegrationEvent<{ transactionId: string }> {
+  readonly eventType = "WagerTransactionProcessed";
+  readonly version = 1;
+
+  static create(): TestEvent {
+    return new TestEvent({
+      eventId: "event-1",
+      aggregateId: "wallet-1",
+      correlationId: "correlation-1",
+      occurredAt: new Date("2026-01-01T00:00:00.000Z"),
       data: { transactionId: "transaction-1" },
-    };
-  },
-};
+    });
+  }
+}
+
+const event = TestEvent.create();
 
 describe("OutboxMessage", () => {
   test("enqueues pending message from event", () => {
