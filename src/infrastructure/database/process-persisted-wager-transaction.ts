@@ -46,7 +46,10 @@ export async function processPersistedWagerTransaction(
     walletRecord.version = result.wallet.version;
     walletRecord.updatedAt = result.wallet.updatedAt;
 
-    tx.persist(toTransactionRecord(result.transaction));
+    const transactionRecord = toTransactionRecord(result.transaction);
+    transactionRecord.observedBalanceAmount = result.wallet.balance.toJSON().amount;
+    transactionRecord.observedBalanceCurrency = result.wallet.balance.currency;
+    tx.persist(transactionRecord);
     await tx.flush();
 
     if (result.ledgerEntry) {

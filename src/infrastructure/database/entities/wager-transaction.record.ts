@@ -59,6 +59,12 @@ export class WagerTransactionRecord {
   @Property({ type: "varchar", length: 80, nullable: true })
   failureCode?: FailureCode;
 
+  @Property({ type: "decimal", precision: 18, scale: 2, nullable: true })
+  observedBalanceAmount?: string;
+
+  @Property({ type: "varchar", length: 3, nullable: true })
+  observedBalanceCurrency?: string;
+
   @Property()
   createdAt!: Date;
 

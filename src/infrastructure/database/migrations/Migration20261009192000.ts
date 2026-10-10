@@ -36,6 +36,8 @@ export class Migration20261009192000 extends Migration {
         "status" varchar(20) not null,
         "reference_transaction_id" uuid null,
         "failure_code" varchar(80) null,
+        "observed_balance_amount" numeric(18, 2) null,
+        "observed_balance_currency" varchar(3) null,
         "created_at" timestamptz not null,
         "processed_at" timestamptz null,
         constraint "wager_transactions_pkey" primary key ("id"),
