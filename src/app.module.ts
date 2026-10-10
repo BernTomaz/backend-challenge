@@ -4,6 +4,7 @@ import { MikroOrmModule } from "@mikro-orm/nestjs";
 import mikroOrmConfig from "./infrastructure/database/mikro-orm.config";
 import { WalletsController } from "./http/wallets.controller";
 import { HealthController } from "./http/health.controller";
+import { MetricsController } from "./http/metrics.controller";
 import { ReconciliationController } from "./http/reconciliation.controller";
 import { WageringController } from "./http/wagering.controller";
 import { WageringTransactionsController } from "./http/wagering-transactions.controller";
@@ -15,6 +16,7 @@ import { WageringTransactionsController } from "./http/wagering-transactions.con
   ],
   controllers: [
     HealthController,
+    MetricsController,
     ReconciliationController,
     WalletsController,
     WageringController,
