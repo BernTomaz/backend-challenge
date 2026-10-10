@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { MikroORM } from "@mikro-orm/postgresql";
+import { EntityManager, MikroORM } from "@mikro-orm/postgresql";
 import { randomUUID } from "node:crypto";
 import { FailureCode } from "../../../src/domain/failure-code";
+import { LedgerDirection } from "../../../src/domain/ledger-direction";
 import { Money } from "../../../src/domain/money";
+import { hashBusinessPayload } from "../../../src/application/payload-hash";
 import {
   WagerTransaction,
   WagerTransactionKind,
@@ -13,6 +15,7 @@ import { OutboxMessageRecord } from "../../../src/infrastructure/database/entiti
 import { WalletLedgerEntryRecord } from "../../../src/infrastructure/database/entities/wallet-ledger-entry.record";
 import { WagerTransactionRecord } from "../../../src/infrastructure/database/entities/wager-transaction.record";
 import { WalletRecord } from "../../../src/infrastructure/database/entities/wallet.record";
+import { processHttpWagerTransaction } from "../../../src/infrastructure/database/process-http-wager-transaction";
 import { processPersistedWagerTransaction } from "../../../src/infrastructure/database/process-persisted-wager-transaction";
 
 let orm: MikroORM;
@@ -179,6 +182,48 @@ describe("wallet concurrency", () => {
     expect(wallet.balanceAmount).toBe("20.00");
     expect(ledgerEntries).toHaveLength(1);
   });
+
+  test("processes the same bet 50 times in parallel as one debit", async () => {
+    const playerId = randomUUID();
+    const walletId = randomUUID();
+    await persistWalletWithOpeningLedger(walletId, playerId);
+    const externalTransactionId = `bet-${randomUUID()}`;
+    const input = {
+      providerId: "provider-a",
+      externalTransactionId,
+      idempotencyKey: `provider-a:${externalTransactionId}`,
+      playerId,
+      walletId,
+      roundId: "round-50",
+      gameId: "game-1",
+      kind: WagerTransactionKind.Bet,
+      money: { amount: "25.00", currency: "BRL" },
+    };
+    const payloadHash = hashBusinessPayload(input);
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () =>
+        processHttpWagerTransaction(orm.em.fork(), { ...input, payloadHash }),
+      ),
+    );
+
+    const em = orm.em.fork();
+    const storedWallet = await em.findOneOrFail(WalletRecord, { id: walletId });
+    const transactions = await em.find(WagerTransactionRecord, { walletId });
+    const debits = await em.find(WalletLedgerEntryRecord, {
+      walletId,
+      direction: LedgerDirection.Debit,
+    });
+
+    expect(new Set(results.map((result) => result.transactionId)).size).toBe(1);
+    expect(results.filter((result) => result.idempotentReplay)).toHaveLength(49);
+    expect(
+      transactions.filter((transaction) => transaction.kind === WagerTransactionKind.Bet),
+    ).toHaveLength(1);
+    expect(debits).toHaveLength(1);
+    expect(storedWallet.balanceAmount).toBe("75.00");
+    expect(await reconstructedBalance(em, walletId)).toBe(storedWallet.balanceAmount);
+  });
 });
 
 function bet(props: { walletId: string; playerId: string; index: number }): WagerTransaction {
@@ -212,4 +257,59 @@ function walletRecord(props: {
     createdAt: props.now,
     updatedAt: props.now,
   });
+}
+
+async function persistWalletWithOpeningLedger(walletId: string, playerId: string): Promise<void> {
+  const em = orm.em.fork();
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  const transactionId = randomUUID();
+
+  await em.persistAndFlush(walletRecord({ walletId, playerId, balance: "100.00", now }));
+  await em.persistAndFlush(Object.assign(new WagerTransactionRecord(), {
+    id: transactionId,
+    providerId: "internal",
+    externalTransactionId: transactionId,
+    idempotencyKey: `internal:${transactionId}`,
+    payloadHash: "0".repeat(64),
+    walletId,
+    playerId,
+    roundId: "opening",
+    gameId: "opening",
+    kind: WagerTransactionKind.Opening,
+    amount: "100.00",
+    currency: "BRL",
+    status: WagerTransactionStatus.Processed,
+    observedBalanceAmount: "100.00",
+    observedBalanceCurrency: "BRL",
+    createdAt: now,
+    processedAt: now,
+  }));
+  await em.persistAndFlush(Object.assign(new WalletLedgerEntryRecord(), {
+    id: randomUUID(),
+    walletId,
+    transactionId,
+    direction: LedgerDirection.Credit,
+    amount: "100.00",
+    currency: "BRL",
+    balanceBefore: "0.00",
+    balanceAfter: "100.00",
+    createdAt: now,
+  }));
+}
+
+async function reconstructedBalance(em: EntityManager, walletId: string): Promise<string> {
+  const entries = await em.find(
+    WalletLedgerEntryRecord,
+    { walletId },
+    { orderBy: { createdAt: "asc" } },
+  );
+  const balance = entries.reduce(
+    (current, entry) =>
+      entry.direction === LedgerDirection.Credit
+        ? current.add(Money.from({ amount: entry.amount, currency: entry.currency }))
+        : current.subtract(Money.from({ amount: entry.amount, currency: entry.currency })),
+    Money.zero("BRL"),
+  );
+
+  return balance.toJSON().amount;
 }

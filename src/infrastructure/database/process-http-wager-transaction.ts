@@ -1,3 +1,4 @@
+import { UniqueConstraintViolationException } from "@mikro-orm/core";
 import { EntityManager } from "@mikro-orm/postgresql";
 import { randomUUID } from "node:crypto";
 import { Money, MoneyProps } from "../../domain/money";
@@ -46,29 +47,7 @@ export async function processHttpWagerTransaction(
   });
 
   if (existing) {
-    if (existing.payloadHash !== input.payloadHash) {
-      throw new IdempotencyConflictError("Idempotency key already used with different payload");
-    }
-
-    metrics.duplicatesDetected += 1;
-    logInfo("wager_transaction_duplicate_replay", {
-      correlationId: input.idempotencyKey,
-      transactionId: existing.id,
-      walletId: existing.walletId,
-      providerId: existing.providerId,
-    });
-
-    return {
-      transactionId: existing.id,
-      status: existing.status,
-      balance: existing.observedBalanceAmount && existing.observedBalanceCurrency
-        ? {
-            amount: existing.observedBalanceAmount,
-            currency: existing.observedBalanceCurrency,
-          }
-        : undefined,
-      idempotentReplay: true,
-    };
+    return replayExistingTransaction(existing, input);
   }
 
   const transaction = WagerTransaction.create({
@@ -85,12 +64,27 @@ export async function processHttpWagerTransaction(
     money: Money.from(input.money),
     referenceExternalTransactionId: input.referenceExternalTransactionId,
   });
-  const result = await processPersistedWagerTransaction({
-    em,
-    transaction,
-    ledgerEntryId: randomUUID(),
-    correlationId: input.idempotencyKey,
-  });
+  let result;
+  try {
+    result = await processPersistedWagerTransaction({
+      em,
+      transaction,
+      ledgerEntryId: randomUUID(),
+      correlationId: input.idempotencyKey,
+    });
+  } catch (error) {
+    if (error instanceof UniqueConstraintViolationException) {
+      const replay = await em.findOne(WagerTransactionRecord, {
+        idempotencyKey: input.idempotencyKey,
+      });
+
+      if (replay) {
+        return replayExistingTransaction(replay, input);
+      }
+    }
+
+    throw error;
+  }
   incrementTransactionStatus(result.transaction.status);
   metrics.processingLatencyMs = Date.now() - startedAt;
   logInfo("wager_transaction_processed", {
@@ -106,5 +100,34 @@ export async function processHttpWagerTransaction(
     status: result.transaction.status,
     balance: result.wallet.balance.toJSON(),
     idempotentReplay: false,
+  };
+}
+
+function replayExistingTransaction(
+  existing: WagerTransactionRecord,
+  input: ProcessHttpWagerTransactionInput,
+): ProcessHttpWagerTransactionResult {
+  if (existing.payloadHash !== input.payloadHash) {
+    throw new IdempotencyConflictError("Idempotency key already used with different payload");
+  }
+
+  metrics.duplicatesDetected += 1;
+  logInfo("wager_transaction_duplicate_replay", {
+    correlationId: input.idempotencyKey,
+    transactionId: existing.id,
+    walletId: existing.walletId,
+    providerId: existing.providerId,
+  });
+
+  return {
+    transactionId: existing.id,
+    status: existing.status,
+    balance: existing.observedBalanceAmount && existing.observedBalanceCurrency
+      ? {
+          amount: existing.observedBalanceAmount,
+          currency: existing.observedBalanceCurrency,
+        }
+      : undefined,
+    idempotentReplay: true,
   };
 }

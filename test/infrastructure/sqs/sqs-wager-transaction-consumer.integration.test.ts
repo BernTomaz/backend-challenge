@@ -16,7 +16,10 @@ import { WagerTransactionRecord } from "../../../src/infrastructure/database/ent
 import { WalletRecord } from "../../../src/infrastructure/database/entities/wallet.record";
 import config from "../../../src/infrastructure/database/mikro-orm.config";
 import { SqsWagerTransactionConsumer } from "../../../src/infrastructure/sqs/sqs-wager-transaction-consumer";
-import { WagerTransactionRequestedMessage } from "../../../src/infrastructure/sqs/process-wager-transaction-message";
+import {
+  processWagerTransactionMessage,
+  WagerTransactionRequestedMessage,
+} from "../../../src/infrastructure/sqs/process-wager-transaction-message";
 
 let orm: MikroORM;
 let sqs: SQSClient;
@@ -110,6 +113,34 @@ describe("SqsWagerTransactionConsumer integration", () => {
     expect(transactions).toHaveLength(1);
     expect(ledgerEntries).toHaveLength(1);
     expect(inboxMessages).toHaveLength(1);
+  });
+
+  test("redelivery after commit before ack does not duplicate financial effects", async () => {
+    const walletId = randomUUID();
+    const playerId = randomUUID();
+    await persistWallet(walletId, playerId, "100.00");
+    const message = wagerMessage({
+      messageId: `msg-${randomUUID()}`,
+      walletId,
+      playerId,
+      externalTransactionId: `transaction-${randomUUID()}`,
+    });
+
+    await processWagerTransactionMessage(orm.em.fork(), message);
+    await send(message);
+    await consumer().pollOnce();
+
+    const em = orm.em.fork();
+    const wallet = await em.findOneOrFail(WalletRecord, { id: walletId });
+    const transactions = await em.find(WagerTransactionRecord, { walletId });
+    const ledgerEntries = await em.find(WalletLedgerEntryRecord, { walletId });
+    const inboxMessages = await em.find(InboxMessageRecord, { messageId: message.messageId });
+
+    expect(wallet.balanceAmount).toBe("75.00");
+    expect(transactions).toHaveLength(1);
+    expect(ledgerEntries).toHaveLength(1);
+    expect(inboxMessages).toHaveLength(1);
+    expect(inboxMessages[0]?.processedAt).toBeInstanceOf(Date);
   });
 
   test("moves transient failure to DLQ after attempt limit", async () => {
