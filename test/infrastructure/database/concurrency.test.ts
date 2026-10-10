@@ -9,6 +9,7 @@ import {
   WagerTransactionStatus,
 } from "../../../src/domain/wager-transaction";
 import config from "../../../src/infrastructure/database/mikro-orm.config";
+import { OutboxMessageRecord } from "../../../src/infrastructure/database/entities/outbox-message.record";
 import { WalletLedgerEntryRecord } from "../../../src/infrastructure/database/entities/wallet-ledger-entry.record";
 import { WagerTransactionRecord } from "../../../src/infrastructure/database/entities/wager-transaction.record";
 import { WalletRecord } from "../../../src/infrastructure/database/entities/wallet.record";
@@ -77,6 +78,7 @@ describe("wallet concurrency", () => {
     const wallet = await em.findOneOrFail(WalletRecord, { id: walletId });
     const transactions = await em.find(WagerTransactionRecord, { walletId });
     const ledgerEntries = await em.find(WalletLedgerEntryRecord, { walletId });
+    const outboxMessages = await em.find(OutboxMessageRecord, { aggregateId: walletId });
 
     expect(wallet.balanceAmount).toBe("20.00");
     expect(transactions).toHaveLength(2);
@@ -92,6 +94,11 @@ describe("wallet concurrency", () => {
     ).toHaveLength(1);
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.amount).toBe("80.00");
+    expect(outboxMessages.map((message) => message.eventType).sort()).toEqual([
+      "WagerTransactionProcessed",
+      "WagerTransactionRejected",
+      "WalletBalanceChanged",
+    ]);
   });
 
   test("processes different wallets in parallel", async () => {

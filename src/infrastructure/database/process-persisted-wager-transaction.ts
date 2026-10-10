@@ -4,8 +4,17 @@ import {
   processWagerTransaction,
   ProcessWagerTransactionResult,
 } from "../../application/process-wager-transaction";
-import { WagerTransaction } from "../../domain/wager-transaction";
+import { OutboxMessage } from "../../domain/outbox-message";
+import { WagerTransaction, WagerTransactionStatus } from "../../domain/wager-transaction";
+import {
+  WalletBalanceChanged,
+  WagerTransactionPendingReference,
+  WagerTransactionProcessed,
+  WagerTransactionRejected,
+} from "../../domain/wagering-events";
 import { Wallet } from "../../domain/wallet";
+import { IntegrationEvent } from "../../domain/integration-event";
+import { OutboxMessageRecord } from "./entities/outbox-message.record";
 import { WagerTransactionRecord } from "./entities/wager-transaction.record";
 import { WalletLedgerEntryRecord } from "./entities/wallet-ledger-entry.record";
 import { WalletRecord } from "./entities/wallet.record";
@@ -16,6 +25,8 @@ export interface ProcessPersistedWagerTransactionInput {
   transaction: WagerTransaction;
   ledgerEntryId: string;
   processedAt?: Date;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export async function processPersistedWagerTransaction(
@@ -56,8 +67,41 @@ export async function processPersistedWagerTransaction(
       tx.persist(toLedgerRecord(result.ledgerEntry));
     }
 
+    for (const event of eventsFor(result, {
+      correlationId: input.correlationId ?? result.transaction.id,
+      causationId: input.causationId,
+      occurredAt: input.processedAt,
+    })) {
+      tx.persist(toOutboxRecord(OutboxMessage.enqueue(event)));
+    }
+
     return result;
   });
+}
+
+function eventsFor(
+  result: ProcessWagerTransactionResult,
+  ctx: { correlationId: string; causationId?: string; occurredAt?: Date },
+): IntegrationEvent<unknown>[] {
+  const events: IntegrationEvent<unknown>[] = [];
+
+  if (result.transaction.status === WagerTransactionStatus.Processed) {
+    events.push(WagerTransactionProcessed.from(result.transaction, ctx));
+  }
+
+  if (result.transaction.status === WagerTransactionStatus.Rejected) {
+    events.push(WagerTransactionRejected.from(result.transaction, ctx));
+  }
+
+  if (result.transaction.status === WagerTransactionStatus.PendingReference) {
+    events.push(WagerTransactionPendingReference.from(result.transaction, ctx));
+  }
+
+  if (result.ledgerEntry) {
+    events.push(WalletBalanceChanged.from(result.wallet, result.ledgerEntry, ctx));
+  }
+
+  return events;
 }
 
 function toTransactionRecord(transaction: WagerTransaction): WagerTransactionRecord {
@@ -95,6 +139,20 @@ function toLedgerRecord(ledgerEntry: NonNullable<ProcessWagerTransactionResult["
   record.balanceBefore = ledgerEntry.balanceBefore.toJSON().amount;
   record.balanceAfter = ledgerEntry.balanceAfter.toJSON().amount;
   record.createdAt = ledgerEntry.createdAt;
+
+  return record;
+}
+
+function toOutboxRecord(message: OutboxMessage): OutboxMessageRecord {
+  const record = new OutboxMessageRecord();
+  record.id = message.id;
+  record.aggregateId = message.aggregateId;
+  record.eventType = message.eventType;
+  record.payload = message.payload;
+  record.occurredAt = message.occurredAt;
+  record.attempts = message.attempts;
+  record.nextAttemptAt = message.nextAttemptAt;
+  record.publishedAt = message.publishedAt;
 
   return record;
 }

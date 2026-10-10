@@ -75,6 +75,7 @@ export async function processHttpWagerTransaction(
     em,
     transaction,
     ledgerEntryId: randomUUID(),
+    correlationId: input.idempotencyKey,
   });
 
   return {

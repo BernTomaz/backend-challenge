@@ -10,6 +10,7 @@ import { MikroORM } from "@mikro-orm/postgresql";
 import { randomUUID } from "node:crypto";
 import { WagerTransactionKind } from "../../../src/domain/wager-transaction";
 import { InboxMessageRecord } from "../../../src/infrastructure/database/entities/inbox-message.record";
+import { OutboxMessageRecord } from "../../../src/infrastructure/database/entities/outbox-message.record";
 import { WalletLedgerEntryRecord } from "../../../src/infrastructure/database/entities/wallet-ledger-entry.record";
 import { WagerTransactionRecord } from "../../../src/infrastructure/database/entities/wager-transaction.record";
 import { WalletRecord } from "../../../src/infrastructure/database/entities/wallet.record";
@@ -63,6 +64,7 @@ describe("SqsWagerTransactionConsumer integration", () => {
     const transactions = await em.find(WagerTransactionRecord, { walletId });
     const ledgerEntries = await em.find(WalletLedgerEntryRecord, { walletId });
     const inboxMessages = await em.find(InboxMessageRecord, { messageId: message.messageId });
+    const outboxMessages = await em.find(OutboxMessageRecord, { aggregateId: walletId });
     const queueMessages = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: queueUrl,
       MaxNumberOfMessages: 1,
@@ -75,6 +77,10 @@ describe("SqsWagerTransactionConsumer integration", () => {
     expect(ledgerEntries).toHaveLength(1);
     expect(inboxMessages).toHaveLength(1);
     expect(inboxMessages[0]?.processedAt).toBeInstanceOf(Date);
+    expect(outboxMessages.map((event) => event.eventType).sort()).toEqual([
+      "WagerTransactionProcessed",
+      "WalletBalanceChanged",
+    ]);
     expect(queueMessages.Messages ?? []).toHaveLength(0);
   });
 
