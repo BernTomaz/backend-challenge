@@ -7,6 +7,7 @@ import {
   SQSClient,
 } from "@aws-sdk/client-sqs";
 import { EntityManager } from "@mikro-orm/postgresql";
+import { randomUUID } from "node:crypto";
 import {
   InboxPayloadConflictError,
   InvalidSqsMessageError,
@@ -108,6 +109,8 @@ export class SqsWagerTransactionConsumer {
     await this.sqs.send(new SendMessageCommand({
       QueueUrl: this.options.dlqUrl,
       MessageBody: message.Body ?? "",
+      MessageGroupId: "wager-transactions-dlq",
+      MessageDeduplicationId: randomUUID(),
     }));
   }
 }

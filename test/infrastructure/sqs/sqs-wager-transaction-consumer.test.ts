@@ -40,6 +40,24 @@ describe("SqsWagerTransactionConsumer", () => {
 
     expect(sent).toEqual(["ReceiveMessageCommand", "SendMessageCommand", "DeleteMessageCommand"]);
   });
+
+  test("does not start a new poll after stop", async () => {
+    const sent: string[] = [];
+    const consumer = new SqsWagerTransactionConsumer({
+      send: async (command: { constructor: { name: string } }) => {
+        sent.push(command.constructor.name);
+        return { Messages: [] };
+      },
+    }, failingEm(), {
+      queueUrl: "queue-url",
+      dlqUrl: "dlq-url",
+    });
+
+    consumer.stop();
+    await consumer.run();
+
+    expect(sent).toEqual([]);
+  });
 });
 
 async function runConsumer(
