@@ -9,7 +9,8 @@
     "test": "bun test",
     "migration:up": "bun src/infrastructure/database/run-migrations.ts up",
     "migration:down": "bun src/infrastructure/database/run-migrations.ts down",
-    "worker:sqs": "bun src/worker/sqs-wager-consumer.ts"
+    "worker:sqs": "bun src/worker/sqs-wager-consumer.ts",
+    "worker:outbox": "bun src/worker/outbox-publisher.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.670.0",

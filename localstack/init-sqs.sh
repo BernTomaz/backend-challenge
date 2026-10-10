@@ -8,3 +8,7 @@ awslocal sqs create-queue \
 awslocal sqs create-queue \
   --queue-name wager-transactions.fifo \
   --attributes FifoQueue=true
+
+awslocal sqs create-queue \
+  --queue-name integration-events.fifo \
+  --attributes FifoQueue=true
