@@ -138,3 +138,30 @@ O fluxo persistente executa:
 7. confirma tudo junto.
 
 Essa estratégia mantém o sistema correto com múltiplas instâncias porque o lock vive no PostgreSQL, não na memória da aplicação.
+
+## Idempotência HTTP
+
+O header `Idempotency-Key` é obrigatório em `POST /wagering/transactions` e é a fonte da verdade para replay.
+
+O `payloadHash` é calculado com SHA-256 sobre um JSON canônico do payload de negócio. O algoritmo:
+
+1. remove metadados de transporte, como headers;
+2. mantém os campos de negócio recebidos no corpo da requisição;
+3. ordena as chaves de objetos em ordem alfabética;
+4. serializa arrays na ordem recebida;
+5. serializa valores primitivos com `JSON.stringify`;
+6. aplica SHA-256 e grava o resultado em hexadecimal.
+
+Campos considerados no hash:
+
+- `providerId`;
+- `externalTransactionId`;
+- `playerId`;
+- `walletId`;
+- `roundId`;
+- `gameId`;
+- `kind`;
+- `money`;
+- `referenceExternalTransactionId`, quando informado.
+
+Requisição com mesma key e mesmo hash retorna replay. Mesma key com hash diferente é conflito de idempotência.
