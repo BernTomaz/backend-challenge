@@ -70,4 +70,10 @@ export class WagerTransactionRecord {
 
   @Property({ nullable: true })
   processedAt?: Date;
+
+  @Property({ type: "integer" })
+  referenceLookupAttempts = 0;
+
+  @Property({ nullable: true })
+  nextReferenceLookupAt?: Date;
 }

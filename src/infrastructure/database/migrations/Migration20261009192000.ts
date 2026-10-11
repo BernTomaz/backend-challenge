@@ -40,6 +40,8 @@ export class Migration20261009192000 extends Migration {
         "observed_balance_currency" varchar(3) null,
         "created_at" timestamptz not null,
         "processed_at" timestamptz null,
+        "reference_lookup_attempts" integer not null default 0,
+        "next_reference_lookup_at" timestamptz null,
         constraint "wager_transactions_pkey" primary key ("id"),
         constraint "wager_transactions_idempotency_unique" unique ("idempotency_key"),
         constraint "wager_transactions_provider_external_unique" unique ("provider_id", "external_transaction_id"),
@@ -53,6 +55,7 @@ export class Migration20261009192000 extends Migration {
 
     this.addSql(`create index "wager_transactions_wallet_id_index" on "wager_transactions" ("wallet_id");`);
     this.addSql(`create index "wager_transactions_reference_external_index" on "wager_transactions" ("provider_id", "reference_external_transaction_id");`);
+    this.addSql(`create index "wager_transactions_pending_reference_index" on "wager_transactions" ("status", "next_reference_lookup_at");`);
 
     this.addSql(`
       create table "wallet_ledger_entries" (

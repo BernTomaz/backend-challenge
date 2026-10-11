@@ -1,6 +1,7 @@
 import { EntityManager } from "@mikro-orm/postgresql";
 import { Money } from "../../domain/money";
 import {
+  nextPendingReferenceAttemptAt,
   processWagerTransaction,
   ProcessWagerTransactionResult,
 } from "../../application/process-wager-transaction";
@@ -46,20 +47,46 @@ export async function processPersistedWagerTransaction(
       updatedAt: walletRecord.updatedAt,
     });
 
+    const existingTransactionRecord = await tx.findOne(WagerTransactionRecord, {
+      id: input.transaction.id,
+    });
+    const referenceTransaction = input.transaction.referenceExternalTransactionId
+      ? await findReferenceTransaction(tx, input.transaction)
+      : undefined;
+    const referenceAlreadyReversedBySameKind = referenceTransaction
+      ? await hasReversalBySameKind(tx, input.transaction, referenceTransaction.id)
+      : false;
+
     const result = processWagerTransaction({
       wallet,
       transaction: input.transaction,
       ledgerEntryId: input.ledgerEntryId,
       processedAt: input.processedAt,
+      referenceTransaction,
+      referenceLookupAttempts: existingTransactionRecord?.referenceLookupAttempts ?? 0,
+      referenceAlreadyReversedBySameKind,
     });
 
     walletRecord.balanceAmount = result.wallet.balance.toJSON().amount;
     walletRecord.version = result.wallet.version;
     walletRecord.updatedAt = result.wallet.updatedAt;
 
-    const transactionRecord = toTransactionRecord(result.transaction);
+    const transactionRecord = assignTransactionRecord(
+      existingTransactionRecord ?? new WagerTransactionRecord(),
+      result.transaction,
+    );
     transactionRecord.observedBalanceAmount = result.wallet.balance.toJSON().amount;
     transactionRecord.observedBalanceCurrency = result.wallet.balance.currency;
+    if (result.transaction.status === WagerTransactionStatus.PendingReference) {
+      transactionRecord.referenceLookupAttempts =
+        (existingTransactionRecord?.referenceLookupAttempts ?? 0) + 1;
+      transactionRecord.nextReferenceLookupAt = nextPendingReferenceAttemptAt(
+        transactionRecord.referenceLookupAttempts,
+        input.processedAt ?? new Date(),
+      );
+    } else {
+      transactionRecord.nextReferenceLookupAt = undefined;
+    }
     tx.persist(transactionRecord);
     await tx.flush();
 
@@ -104,8 +131,61 @@ function eventsFor(
   return events;
 }
 
-function toTransactionRecord(transaction: WagerTransaction): WagerTransactionRecord {
-  const record = new WagerTransactionRecord();
+async function findReferenceTransaction(
+  em: EntityManager,
+  transaction: WagerTransaction,
+): Promise<WagerTransaction | undefined> {
+  const record = await em.findOne(WagerTransactionRecord, {
+    providerId: transaction.providerId,
+    externalTransactionId: transaction.referenceExternalTransactionId,
+  });
+
+  return record ? toDomainTransaction(record) : undefined;
+}
+
+async function hasReversalBySameKind(
+  em: EntityManager,
+  transaction: WagerTransaction,
+  referenceTransactionId: string,
+): Promise<boolean> {
+  const existing = await em.findOne(WagerTransactionRecord, {
+    id: { $ne: transaction.id },
+    providerId: transaction.providerId,
+    walletId: transaction.walletId,
+    kind: transaction.kind,
+    referenceTransactionId,
+    status: WagerTransactionStatus.Processed,
+  });
+
+  return Boolean(existing);
+}
+
+function toDomainTransaction(record: WagerTransactionRecord): WagerTransaction {
+  return WagerTransaction.rehydrate({
+    id: record.id,
+    providerId: record.providerId,
+    externalTransactionId: record.externalTransactionId,
+    idempotencyKey: record.idempotencyKey,
+    payloadHash: record.payloadHash,
+    walletId: record.walletId,
+    playerId: record.playerId,
+    roundId: record.roundId,
+    gameId: record.gameId,
+    kind: record.kind,
+    money: Money.from({ amount: record.amount, currency: record.currency }),
+    referenceExternalTransactionId: record.referenceExternalTransactionId,
+    createdAt: record.createdAt,
+    status: record.status,
+    referenceTransactionId: record.referenceTransactionId,
+    failureCode: record.failureCode,
+    processedAt: record.processedAt,
+  });
+}
+
+function assignTransactionRecord(
+  record: WagerTransactionRecord,
+  transaction: WagerTransaction,
+): WagerTransactionRecord {
   record.id = transaction.id;
   record.providerId = transaction.providerId;
   record.externalTransactionId = transaction.externalTransactionId;
