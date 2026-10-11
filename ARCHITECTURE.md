@@ -99,7 +99,9 @@ Decisão atual:
 - limite máximo do backoff: `300` segundos;
 - ao esgotar tentativas: `REJECTED` com `REFERENCE_NOT_FOUND`.
 
-O limite é pequeno para evitar pendências indefinidas e manter a falha auditável. O worker agendado real será implementado em etapa posterior.
+O limite é pequeno para evitar pendências indefinidas e manter a falha auditável.
+
+O reprocessamento é feito pelo worker `worker:pending-references`, que busca transações `PENDING_REFERENCE` vencidas por `nextReferenceLookupAt` e reutiliza o mesmo fluxo transacional persistente das entradas HTTP/SQS.
 
 ## Códigos de Falha
 

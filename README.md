@@ -744,3 +744,110 @@ wallet.balance == saldo reconstruído pelo ledger
 ### Diferenciais opcionais
 
 Teste de carga também conta como diferencial. Se fizer, exponha como `bun run test:load` e registre ambiente, metodologia, throughput, p50/p95/p99, taxa de erro, conflitos de concorrência e outbox lag. Não há meta de RPS — a qualidade do experimento e a honestidade da análise pesam mais que o número bruto.
+
+---
+
+## Como rodar o projeto
+
+### Requisitos
+
+- Docker com Docker Compose;
+- Bun 1.x;
+- Node.js 20 ou superior.
+
+### Instalação
+
+```bash
+bun install
+```
+
+### Subir dependências locais
+
+```bash
+docker compose up -d
+```
+
+Esse comando sobe PostgreSQL e LocalStack.
+
+Para conferir:
+
+```bash
+docker compose ps
+```
+
+### Migrations
+
+Aplicar migrations:
+
+```bash
+bun run migration:up
+```
+
+Reverter migrations:
+
+```bash
+bun run migration:down
+```
+
+### Rodar a API
+
+```bash
+bun run start:dev
+```
+
+Por padrão, a API sobe em:
+
+```txt
+http://localhost:3000
+```
+
+Endpoints úteis:
+
+```txt
+GET  /health/live
+GET  /health/ready
+GET  /metrics
+POST /wallets
+GET  /wallets/:walletId
+GET  /wallets/:walletId/ledger
+POST /wagering/transactions
+GET  /wagering/transactions/:transactionId
+GET  /providers/:providerId/wagering/transactions/:externalTransactionId
+POST /wallets/:walletId/reconciliation
+```
+
+### Workers
+
+Consumidor SQS de transações:
+
+```bash
+bun run worker:sqs
+```
+
+Publisher da outbox:
+
+```bash
+bun run worker:outbox
+```
+
+Reprocessador de referências pendentes:
+
+```bash
+bun run worker:pending-references
+```
+
+### Testes
+
+Rodar todos os testes:
+
+```bash
+bun test
+```
+
+Checar TypeScript:
+
+```bash
+bunx tsc --noEmit
+```
+
+Os testes de integração usam PostgreSQL e LocalStack reais em containers. Mantenha o Docker Compose ativo antes de rodá-los.
