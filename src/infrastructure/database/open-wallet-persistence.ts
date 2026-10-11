@@ -25,6 +25,7 @@ export function persistOpenWallet(
         updatedAt: result.wallet.updatedAt,
       }),
     );
+    await tx.flush();
 
     if (result.openingTransaction) {
       tx.persist(
@@ -48,6 +49,7 @@ export function persistOpenWallet(
           processedAt: result.openingTransaction.processedAt,
         }),
       );
+      await tx.flush();
     }
 
     if (result.ledgerEntry) {
