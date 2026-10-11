@@ -816,6 +816,12 @@ GET  /providers/:providerId/wagering/transactions/:externalTransactionId
 POST /wallets/:walletId/reconciliation
 ```
 
+Também é possível validar observabilidade direto no navegador:
+
+- `http://localhost:3000/health/live` — processo vivo;
+- `http://localhost:3000/health/ready` — PostgreSQL e SQS alcançáveis;
+- `http://localhost:3000/metrics` — métricas em JSON.
+
 ### Teste funcional rápido
 
 Com a API rodando, o fluxo mínimo para validar a aplicação é:
