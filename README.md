@@ -816,6 +816,58 @@ GET  /providers/:providerId/wagering/transactions/:externalTransactionId
 POST /wallets/:walletId/reconciliation
 ```
 
+### Teste funcional rápido
+
+Com a API rodando, o fluxo mínimo para validar a aplicação é:
+
+1. Criar uma wallet em `POST /wallets`.
+2. Copiar o `id` retornado.
+3. Enviar uma aposta em `POST /wagering/transactions`, usando esse `id` como `walletId`.
+4. Repetir a mesma aposta com a mesma `Idempotency-Key` para validar replay idempotente.
+5. Consultar `GET /wallets/:walletId` e `GET /wallets/:walletId/ledger?limit=50`.
+
+No Postman:
+
+- use `Body > raw > JSON`;
+- em `POST /wagering/transactions`, adicione o header `Idempotency-Key`;
+- repita a mesma requisição sem alterar body nem headers para validar `idempotentReplay: true`.
+
+Exemplo para criar wallet:
+
+```json
+{
+  "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+  "initialBalance": {
+    "amount": "100.00",
+    "currency": "BRL"
+  }
+}
+```
+
+Exemplo de aposta:
+
+```json
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "bet-postman-1",
+  "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+  "walletId": "COLE_O_ID_DA_WALLET_AQUI",
+  "roundId": "round-postman-1",
+  "gameId": "game-1",
+  "kind": "BET",
+  "money": {
+    "amount": "25.00",
+    "currency": "BRL"
+  }
+}
+```
+
+Resultado esperado:
+
+- primeira aposta: `PROCESSED`, saldo `75.00`, `idempotentReplay: false`;
+- repetição idêntica: mesmo `transactionId`, saldo `75.00`, `idempotentReplay: true`;
+- ledger: uma entrada `CREDIT 100.00` e uma entrada `DEBIT 25.00`.
+
 ### Workers
 
 Consumidor SQS de transações:
