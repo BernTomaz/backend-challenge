@@ -876,6 +876,14 @@ Resultado esperado:
 
 ### Workers
 
+Antes de rodar os workers manualmente com LocalStack, crie as filas locais:
+
+```bash
+docker exec backend-challenge-localstack-1 awslocal sqs create-queue --queue-name wager-transactions.fifo --attributes FifoQueue=true
+docker exec backend-challenge-localstack-1 awslocal sqs create-queue --queue-name wager-transactions-dlq.fifo --attributes FifoQueue=true
+docker exec backend-challenge-localstack-1 awslocal sqs create-queue --queue-name integration-events.fifo --attributes FifoQueue=true
+```
+
 Consumidor SQS de transações:
 
 ```bash
@@ -893,6 +901,8 @@ Reprocessador de referências pendentes:
 ```bash
 bun run worker:pending-references
 ```
+
+Os workers são processos contínuos. Quando não há mensagens, eventos ou referências pendentes, eles podem ficar sem imprimir saída no terminal.
 
 ### Testes
 
