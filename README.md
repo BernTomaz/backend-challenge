@@ -884,6 +884,12 @@ docker exec backend-challenge-localstack-1 awslocal sqs create-queue --queue-nam
 docker exec backend-challenge-localstack-1 awslocal sqs create-queue --queue-name integration-events.fifo --attributes FifoQueue=true
 ```
 
+Para conferir se as filas foram criadas:
+
+```bash
+docker exec backend-challenge-localstack-1 awslocal sqs list-queues
+```
+
 Consumidor SQS de transações:
 
 ```bash
